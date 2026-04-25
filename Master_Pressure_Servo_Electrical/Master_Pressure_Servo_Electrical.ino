@@ -27,13 +27,26 @@
 #include <math.h>
 #include <Preferences.h>
 
+// ====================== TYPE DEFINITIONS ======================
+// These must appear before any function that uses them as a parameter or
+// return type. The Arduino IDE auto-generates forward function prototypes
+// and inserts them near the top of the file; if SlaveIdx / MasterState are
+// defined further down, those prototypes fail to compile.
+enum MasterState : uint8_t {
+  MS_IDLE,          // waiting for user input
+  MS_WAIT_ACKS,     // sent SETs (and maybe STARTs), waiting for ACK deadline
+  MS_RUNNING        // all channels active, sending keepalives
+};
+
+enum SlaveIdx : int { S_ELEC=0, S_PRES=1, S_MOTO=2 };
+
 // ====================== SLAVE MACs ======================
 // Use BICEP_MAC_Address sketch to read each device's MAC, then update here.
 //uint8_t mac_elec[]  = {0x68, 0xFE, 0x71, 0x0D, 0x80, 0xB0}; // Electrical slave
 //uint8_t mac_press[] = {0x68, 0xFE, 0x71, 0x0C, 0xB9, 0x50}; // Pressure slave
 //uint8_t mac_motor[] = {0x68, 0xFE, 0x71, 0x0C, 0xB7, 0xF8}; // Servo/Motor slave
 
-uint8_t mac_elec[]  = {0x94, 0x54, 0xC5, 0x74, 0xAB, 0x38}; // Electrical slave
+uint8_t mac_elec[]  = {0x80, 0xF3, 0xDA, 0x41, 0x68, 0x10}; // Electrical slave80:F3:DA:41:68:10
 uint8_t mac_press[] = {0x68, 0xFE, 0x71, 0x0C, 0xB9, 0x50}; // Pressure slave
 uint8_t mac_motor[] = {0x68, 0xFE, 0x71, 0x0C, 0xB7, 0xF8}; // Servo/Motor slave
 
@@ -118,11 +131,8 @@ static volatile uint32_t run_id  = 1;  // volatile: read in callback (onEspNowRe
 static volatile bool     running = false;
 
 // ====================== MASTER STATE MACHINE ======================
-enum MasterState : uint8_t {
-  MS_IDLE,          // waiting for user input
-  MS_WAIT_ACKS,     // sent SETs (and maybe STARTs), waiting for ACK deadline
-  MS_RUNNING        // all channels active, sending keepalives
-};
+// MasterState is defined near the top of the file (before any function
+// that uses it) to satisfy the Arduino auto-prototype generator.
 
 enum RequestType : uint8_t { REQ_APPLY_ONLY, REQ_APPLY_START, REQ_STOP };
 
@@ -205,7 +215,7 @@ struct SlaveHealth {
   uint32_t lastStatusSlaveMs = 0;
 };
 
-enum SlaveIdx : int { S_ELEC=0, S_PRES=1, S_MOTO=2 };
+// SlaveIdx is defined near the top of the file (auto-prototype safe).
 SlaveHealth H[3];
 
 // ====================== UTILITIES ======================
