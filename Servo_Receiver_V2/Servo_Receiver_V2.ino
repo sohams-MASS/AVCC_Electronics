@@ -92,7 +92,7 @@ struct RxPacket {
   Msg     msg;
 };
 static QueueHandle_t msgQueue = nullptr;
-static const int MSG_QUEUE_DEPTH = 16;
+static const int MSG_QUEUE_DEPTH = 32;  // accommodates a 24-packet Apply+Start burst plus headroom
 
 // ---------- TIME ----------
 static inline uint32_t nowUs(){ return (uint32_t)micros(); }

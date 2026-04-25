@@ -214,7 +214,7 @@ struct ChanUpdate {
 static QueueHandle_t msgQueue    = nullptr;  // RxPacket
 static QueueHandle_t updateQueue = nullptr;  // ChanUpdate
 
-static const int MSG_QUEUE_DEPTH    = 16;
+static const int MSG_QUEUE_DEPTH    = 32;  // accommodates a 24-packet Apply+Start burst plus headroom
 static const int UPDATE_QUEUE_DEPTH = NCH * 3;  // 36
 
 // ============================================================

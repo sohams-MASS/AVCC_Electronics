@@ -247,9 +247,24 @@ static inline void logSendErr(esp_err_t e){
   Serial.printf("esp_now_send failed: e=%d (0x%08X)\n", (int)e, (unsigned int)e);
 }
 
+// ESP-NOW driver's send queue is only 10 deep. burstAllSets / burstAllStarts
+// each submit ~36 packets in <1 ms, so without backpressure several would
+// fail silently with ESP_ERR_ESPNOW_NO_MEM and the slave would never see
+// them — showing up later as stuck "pending" channels in the UI.
+// On NO_MEM we wait 1 ms (≈one packet's airtime) and retry. On success
+// we return immediately, so this doesn't slow traffic that fits in the queue.
 static inline void sendOne(const uint8_t *mac, const Msg &m){
-  esp_err_t e = esp_now_send(mac, (const uint8_t*)&m, sizeof(Msg));
-  if (e != ESP_OK) logSendErr(e);
+  for (int attempt = 0; attempt < 6; attempt++) {
+    esp_err_t e = esp_now_send(mac, (const uint8_t*)&m, sizeof(Msg));
+    if (e == ESP_OK) return;
+    if (e == ESP_ERR_ESPNOW_NO_MEM) {
+      vTaskDelay(1);
+      continue;
+    }
+    logSendErr(e);
+    return;
+  }
+  if (debugEnabled) Serial.println("sendOne: dropped after 6 NO_MEM retries");
 }
 
 static inline void sendToSlave(SlaveIdx s, const Msg &m){
