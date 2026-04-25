@@ -463,6 +463,9 @@ void loop(){
   while (xQueueReceive(msgQueue, &pkt, 0) == pdTRUE) {
     memcpy(lastMasterMac, pkt.mac, 6);
     dispatchMsg(pkt.msg);
+    // Throttle to ~1 ms per packet so the ESP-NOW send queue (10 deep)
+    // can drain between back-to-back acks during the Apply+Start burst.
+    vTaskDelay(1);
   }
 
   // Duration auto-stop per channel

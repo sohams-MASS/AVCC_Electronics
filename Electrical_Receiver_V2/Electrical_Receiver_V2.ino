@@ -743,6 +743,11 @@ void loop() {
   while (xQueueReceive(msgQueue, &pkt, 0) == pdTRUE) {
     memcpy(lastMasterMac, pkt.mac, 6);
     dispatchMsg(pkt.msg);
+    // Throttle to ~1 ms per packet so the ESP-NOW send queue (10 deep)
+    // can drain between back-to-back acks. Without this, the 24-packet
+    // burst at Apply+Start (12 SET + 12 START) overruns the queue and
+    // ~1 ack is silently dropped → one channel stuck "pending" in UI.
+    vTaskDelay(1);
   }
 
   // ── 2. 1 Hz status heartbeat to master ─────────────────────
