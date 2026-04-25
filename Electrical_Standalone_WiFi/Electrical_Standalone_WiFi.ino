@@ -27,8 +27,9 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 
-// Forward declaration so Arduino's auto-prototype generator compiles.
+// Forward declarations so Arduino's auto-prototype generator compiles.
 struct ChanState;
+struct ApplyMsg;
 
 // ---------- PINS (verbatim from Electrical_Receiver_V2) ----------
 static const int WR1 = 23;
