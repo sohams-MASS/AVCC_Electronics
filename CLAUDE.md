@@ -12,7 +12,7 @@ Architecture spec: `AVCC_Architecture.tex` (authoritative, 77-page reference).
 | `Electrical_Receiver_V2/` | 12-ch DAC slave (±15V via 8-bit parallel bus). Dual-core: `waveformTask` spin-waits for sub-ms edge timing, `loop()` handles ESP-NOW |
 | `Pressure_Receiver_V2/` | 12-ch solenoid GPIO slave. Two pulses per electrical period. Per-channel auto-stop |
 | `Servo_Receiver_V2/` | 12-ch servo slave. Ramped motion (11 ms/deg up, 3.67 ms/deg down). **2 Hz hard cap** — rejects higher-frequency requests with nack |
-| `BICEP_MAC_Address/` | Utility: prints ESP32 MAC at 300 baud |
+| `BICEP_MAC_Address/` | Utility: prints ESP32 STA MAC at 115200 baud (must set `WIFI_STA` mode first or it reads as zeros) |
 | `Test_on_Wifi/` | Utility: Wi-Fi AP smoke test |
 
 ## Wire protocol
