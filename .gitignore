@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Google Drive sync
+.tmp.driveupload/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Arduino build artifacts
+build/
+*.elf
+*.bin
+*.map
