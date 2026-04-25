@@ -26,6 +26,12 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 
+// Forward declarations so Arduino's auto-generated function prototypes
+// (inserted near the top of the .ino) compile. The full definitions
+// appear further down; passing by reference only needs the name in scope.
+struct ChanState;
+struct ChanUpdate;
+
 // ---------- WIFI / ESPNOW ----------
 static const uint8_t WIFI_CH = 1;
 
