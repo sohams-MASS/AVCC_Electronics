@@ -65,7 +65,10 @@ static const uint32_t MIN_PERIOD_US = 100000;
 static const uint32_t MAX_PERIOD_US = 30000000;
 
 // ---------- HEARTBEAT FAILSAFE ----------
-static const uint32_t HEARTBEAT_TIMEOUT_MS = 500;
+// 2 s tolerates ~13 missed master keepalives at the 150 ms cadence and
+// gives plenty of margin against the 600 ms start-delay grace plus any
+// initial-burst stall before the first keepalive arrives.
+static const uint32_t HEARTBEAT_TIMEOUT_MS = 2000;
 static uint32_t lastHeartbeatMs = 0;   // written+read by loop() only
 static volatile uint32_t currentRunId = 0;
 static volatile bool     runActive    = false;

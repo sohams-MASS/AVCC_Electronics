@@ -33,7 +33,7 @@ static const int servoPins[12] = {
 static const uint8_t NCH = 12;
 
 // ---------- HEARTBEAT ----------
-static const uint32_t HEARTBEAT_TIMEOUT_MS = 500; // 500ms: ~3 missed keepalives at master's 150ms rate
+static const uint32_t HEARTBEAT_TIMEOUT_MS = 2000; // ~13 missed keepalives at master's 150 ms cadence
 static volatile uint32_t lastHeartbeatMs = 0;
 static volatile uint32_t currentRunId = 0;
 static volatile bool runActive = false;

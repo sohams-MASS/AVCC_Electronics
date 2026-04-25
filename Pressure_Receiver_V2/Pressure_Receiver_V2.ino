@@ -33,7 +33,7 @@ static const uint32_t MIN_PERIOD_US = 100000;    // 10 Hz max (period refers to 
 static const uint32_t MAX_PERIOD_US = 30000000;  // 30 s max
 
 // ---------- HEARTBEAT FAILSAFE ----------
-static const uint32_t HEARTBEAT_TIMEOUT_MS = 500; // 500ms: ~3 missed keepalives at master's 150ms rate
+static const uint32_t HEARTBEAT_TIMEOUT_MS = 2000; // ~13 missed keepalives at master's 150 ms cadence
 static volatile uint32_t lastHeartbeatMs = 0;
 static volatile uint32_t currentRunId = 0;
 static volatile bool runActive = false;

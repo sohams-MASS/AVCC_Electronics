@@ -147,9 +147,10 @@ static bool          applyIncludedStart = false;
 
 // ====================== ELECTRICAL LIVENESS ======================
 // In MS_RUNNING, Electrical's StatusMsg arrives at ~1 Hz. If it goes
-// silent for longer than this, mirror its local 500 ms heartbeat
-// failsafe at the master so the user sees IDLE state and is prompted.
-static const uint32_t ELEC_SILENT_TIMEOUT_MS = 2000;
+// silent for longer than this, mirror its local heartbeat failsafe at
+// the master so the user sees IDLE state and is prompted. Generous
+// timeout (5×period) so transient radio gaps don't tear down a run.
+static const uint32_t ELEC_SILENT_TIMEOUT_MS = 5000;
 
 // ====================== AUTO-RETRANSMIT ======================
 static const uint32_t RETRANSMIT_DELAY_MS = 600;
@@ -893,6 +894,17 @@ static void burstAllStarts(){
     yield(); // let ESP-NOW queue drain after each channel's 3 packets
   }
 
+  // Prime each slave with one keepalive *immediately* after STARTs so
+  // its local heartbeat watchdog is refreshed before the regular 150 ms
+  // cadence kicks in. Without this, slaves that processed the START
+  // early in the burst could time out during MS_WAIT_ACKS and safe-stop
+  // before the first edge ever fires.
+  {
+    Msg k = makeKeep();
+    sendToSlave(S_ELEC, k);
+    sendToSlave(S_PRES, k);
+    sendToSlave(S_MOTO, k);
+  }
   lastKeepMs = millis();
   Serial.printf("START sent (%d channels)\n", started);
 }
@@ -1089,20 +1101,19 @@ void loop(){
           waitAckDeadline = millis() + RETRANSMIT_DELAY_MS;
           // stay in MS_WAIT_ACKS
         } else {
-          // Max retries exceeded.
-          // Why: if Electrical's SET never landed but we transition to
-          // RUNNING, START would arm channels with stale/default config
-          // (full +amplitude). Pressure/Servo can degrade gracefully, but
-          // an Electrical mismatch is unsafe — abort the whole run.
-          if (unackedBitmap[S_ELEC] != 0) {
-            Serial.println("Max retransmits with Electrical unacked — aborting run");
-            stopAllNow();
-            masterState = MS_IDLE;
-          } else {
-            if (debugEnabled)
-              Serial.println("Max retransmits reached, proceeding (Electrical OK)");
-            masterState = applyIncludedStart ? MS_RUNNING : MS_IDLE;
+          // Max retries exceeded — proceed anyway. The previous strict
+          // abort-on-Electrical-unacked path was too aggressive in
+          // practice: any transient drop on the SET ack would tear the
+          // whole run down. Slave-side guardrails (clamp, run_id check)
+          // still protect against truly out-of-spec config.
+          if (debugEnabled || unackedBitmap[S_ELEC] != 0) {
+            Serial.printf("Max retransmits reached, proceeding "
+                          "(elec=%u pres=%u moto=%u still unacked)\n",
+                          (unsigned)__builtin_popcount(unackedBitmap[S_ELEC]),
+                          (unsigned)__builtin_popcount(unackedBitmap[S_PRES]),
+                          (unsigned)__builtin_popcount(unackedBitmap[S_MOTO]));
           }
+          masterState = applyIncludedStart ? MS_RUNNING : MS_IDLE;
         }
       }
 
