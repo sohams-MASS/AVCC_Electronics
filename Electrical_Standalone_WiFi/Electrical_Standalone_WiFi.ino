@@ -22,6 +22,7 @@
 // Default WEBSERVER_MAX_POST_ARGS=32 is too small (12 ch × 4 fields = 48).
 #define WEBSERVER_MAX_POST_ARGS 64
 #include <WebServer.h>
+#include <Preferences.h>
 #include <soc/gpio_struct.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -85,6 +86,51 @@ static float    cfgFreqHz[NCH];
 static uint32_t cfgPulseUs[NCH];
 static float    cfgAmpV[NCH];          // 0..15 V (mirrored around neutral)
 static bool     runningAny = false;   // last applied state had any channel enabled
+static bool     dirtySettings = false; // RAM differs from saved flash snapshot
+
+// =====================================================================
+//  NVS PERSISTENCE
+// =====================================================================
+// Separate namespace from the master sketch so a chip that's been used
+// for both doesn't get key collisions.
+static Preferences  prefs;
+static const char*  NVS_NS = "saumel_el";
+
+static void factoryDefaultsToRAM() {
+  for (int i = 0; i < NCH; i++) {
+    cfgEnable[i]  = true;
+    cfgFreqHz[i]  = 0.5f;
+    cfgPulseUs[i] = 2000UL + (uint32_t)i * 1000UL;
+    cfgAmpV[i]    = MAX_AMP_V;
+  }
+  dirtySettings = true;
+}
+
+static void loadSettingsFromFlash() {
+  prefs.begin(NVS_NS, true);
+  for (int i = 0; i < NCH; i++) {
+    char k[8];
+    snprintf(k, sizeof(k), "en%02d", i); cfgEnable[i]  = prefs.getBool (k, true);
+    snprintf(k, sizeof(k), "f%02d",  i); cfgFreqHz[i]  = prefs.getFloat(k, 0.5f);
+    snprintf(k, sizeof(k), "p%02d",  i); cfgPulseUs[i] = prefs.getUInt (k, 2000UL + (uint32_t)i * 1000UL);
+    snprintf(k, sizeof(k), "a%02d",  i); cfgAmpV[i]    = prefs.getFloat(k, MAX_AMP_V);
+  }
+  prefs.end();
+  dirtySettings = false;
+}
+
+static void saveSettingsToFlash() {
+  prefs.begin(NVS_NS, false);
+  for (int i = 0; i < NCH; i++) {
+    char k[8];
+    snprintf(k, sizeof(k), "en%02d", i); prefs.putBool (k, cfgEnable[i]);
+    snprintf(k, sizeof(k), "f%02d",  i); prefs.putFloat(k, cfgFreqHz[i]);
+    snprintf(k, sizeof(k), "p%02d",  i); prefs.putUInt (k, cfgPulseUs[i]);
+    snprintf(k, sizeof(k), "a%02d",  i); prefs.putFloat(k, cfgAmpV[i]);
+  }
+  prefs.end();
+  dirtySettings = false;
+}
 
 // =====================================================================
 //  CROSS-TASK MESSAGES
@@ -327,6 +373,9 @@ static const char* PAGE_HEAD =
   ".btn{display:inline-block;margin:14px 6px 0 0;padding:8px 14px;border-radius:4px;border:0;font-weight:600;cursor:pointer}"
   ".apply{background:#2266dd;color:#fff}"
   ".stop{background:#aa3333;color:#fff}"
+  ".save{background:#2a8a3a;color:#fff}"
+  ".neutral{background:#444;color:#eee}"
+  ".dirty{color:#fb6;margin-left:8px;font-size:13px}"
   ".status{margin-top:14px;font-size:13px;color:#9af}"
   "</style></head><body>";
 
@@ -356,26 +405,33 @@ static void handleRoot() {
   server.send(200, "text/html", "");
   server.sendContent(PAGE_HEAD);
 
-  char hdr[320];
+  char hdr[400];
   snprintf(hdr, sizeof(hdr),
-    "<h1>Saumel Electrical &mdash; standalone (%s)</h1>"
+    "<h1>Saumel Electrical &mdash; standalone (%s)"
+    "%s</h1>"
     "<form method='POST' action='/apply'>"
     "<table><thead><tr>"
     "<th>Ch</th><th>On</th><th>Hz</th><th>Pulse (&mu;s)</th><th>Amp (V)</th>"
     "</tr></thead><tbody>",
-    runningAny ? "running" : "stopped");
+    runningAny ? "running" : "stopped",
+    dirtySettings ? "<span class='dirty'>&#9679; unsaved changes</span>" : "");
   server.sendContent(hdr);
 
   for (int i = 0; i < NCH; i++) sendChannelRow(i);
 
   server.sendContent(
     "</tbody></table>"
-    "<button class='btn apply' type='submit'>Apply</button>"
-    "<button class='btn stop'  type='submit' formaction='/stop'>Stop All</button>"
+    "<button class='btn apply'   type='submit'>Apply</button>"
+    "<button class='btn stop'    type='submit' formaction='/stop'>Stop All</button>"
+    "<button class='btn save'    type='submit' formaction='/save'>Save</button>"
+    "<button class='btn neutral' type='submit' formaction='/load'>Load</button>"
+    "<button class='btn neutral' type='submit' formaction='/factory'>Factory Reset</button>"
     "</form>"
     "<div class='status'>"
     "Bipolar pulse: +V for pulse_us &rarr; 0V &rarr; &minus;V for pulse_us &rarr; 0V (V is per-channel amplitude)."
     " All enabled channels re-arm phase-aligned on Apply."
+    " Save persists the last-applied config to flash; Load reloads the saved config (Apply afterwards to use it);"
+    " Factory Reset rewrites the form with built-in defaults (still needs Save to persist)."
     "</div></body></html>");
   server.client().stop();
 }
@@ -428,7 +484,8 @@ static void handleApply() {
     m.neg_code[i]  = voltsToCode(-a);
     if (en) anyEnabled = true;
   }
-  runningAny = anyEnabled;
+  runningAny    = anyEnabled;
+  dirtySettings = true;   // RAM may differ from saved snapshot now
 
   xQueueSend(applyQueue, &m, 0);
 
@@ -446,6 +503,30 @@ static void handleStop() {
   server.send(303, "text/plain", "");
 }
 
+// Persist whatever is currently in RAM (the last applied / loaded state).
+// Form fields posted with this request are intentionally ignored — Save
+// is decoupled from form edits so a typo in a field can't reach flash
+// without going through Apply first.
+static void handleSave() {
+  saveSettingsToFlash();
+  server.sendHeader("Location", "/");
+  server.send(303, "text/plain", "");
+}
+
+static void handleLoad() {
+  loadSettingsFromFlash();
+  // RAM now matches flash; running channels are untouched (user must
+  // press Apply if they want the loaded values to take effect).
+  server.sendHeader("Location", "/");
+  server.send(303, "text/plain", "");
+}
+
+static void handleFactory() {
+  factoryDefaultsToRAM();
+  server.sendHeader("Location", "/");
+  server.send(303, "text/plain", "");
+}
+
 static void handleNotFound() {
   server.send(404, "text/plain", "Not found");
 }
@@ -459,13 +540,10 @@ void setup() {
   Serial.println();
   Serial.println("Saumel Electrical standalone (Wi-Fi GUI)");
 
-  // Defaults: all enabled, 0.5 Hz, ch1=2000 µs ascending +1000 µs, ±15 V.
-  for (int i = 0; i < NCH; i++) {
-    cfgEnable[i]  = true;
-    cfgFreqHz[i]  = 0.5f;
-    cfgPulseUs[i] = 2000UL + (uint32_t)i * 1000UL;
-    cfgAmpV[i]    = MAX_AMP_V;
-  }
+  // Pull last-saved settings from NVS. Keys missing on a fresh chip
+  // fall back to factory defaults via the per-key getX() defaults
+  // (matches factoryDefaultsToRAM()).
+  loadSettingsFromFlash();
 
   // GPIO init.
   const int allPins[] = {
@@ -499,9 +577,12 @@ void setup() {
   Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
 
   // Web routes.
-  server.on("/",       HTTP_GET,  handleRoot);
-  server.on("/apply",  HTTP_POST, handleApply);
-  server.on("/stop",   HTTP_POST, handleStop);
+  server.on("/",        HTTP_GET,  handleRoot);
+  server.on("/apply",   HTTP_POST, handleApply);
+  server.on("/stop",    HTTP_POST, handleStop);
+  server.on("/save",    HTTP_POST, handleSave);
+  server.on("/load",    HTTP_POST, handleLoad);
+  server.on("/factory", HTTP_POST, handleFactory);
   server.onNotFound(handleNotFound);
   server.begin();
   Serial.printf("Web UI ready: connect to '%s' (pw: %s) → http://192.168.4.1\n",
